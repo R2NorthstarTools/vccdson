@@ -1,4 +1,4 @@
-# -*- coding: ANSI -*-
+# -*- coding: utf-8 -*-
 #     Script for editing VCCD Files
 #     Copyright (C) 2023 EM4Volts
 #
@@ -19,7 +19,7 @@ import sys, json, codecs, os, struct
 
 
 def write_char(file, char):
-    entry = struct.pack('<s', bytes(char, 'utf-8'))
+    entry = struct.pack('<s', bytes(char, 'UTF-8 '))
     file.write(entry)
 
 def write_buffer(file, size):
@@ -70,9 +70,9 @@ class VCCD_ENTRY:
 
 class VCCD:
 
-    def __init__( self, in_file , user_specified_encoding):
+    def __init__( self, in_file ):
         self.vccd_file = in_file
-        self.magic = self.vccd_file.read(4).decode(user_specified_encoding)
+        self.magic = self.vccd_file.read(4).decode("utf-8")
         self.version = read_int32(self.vccd_file)
         self.num_blocks = read_int32(self.vccd_file)
         self.block_size = read_int32(self.vccd_file)
@@ -82,7 +82,6 @@ class VCCD:
         self.entries = []
         for i in range(self.directory_size):
             self.entries.append(VCCD_ENTRY(self.vccd_file))
-        #116832
         self.entries_data = []
 
         self.read_entries_data_offset = self.data_offset
@@ -96,7 +95,8 @@ class VCCD:
                 self.read_entries_data_offset += self.block_size
                 
             self.vccd_file.seek(self.read_entries_data_offset + i.offset)
-            i.data = str( self.vccd_file.read(i.lenght).decode(user_specified_encoding) )
+            i.data = str( self.vccd_file.read(i.lenght).decode("utf-8", errors="backslashreplace") )
+
             old_block = i.block_number
         
 
@@ -116,6 +116,7 @@ class VCCD:
 
         subtitles = {
 
+            "filename"          :       os.path.basename(in_file),
             "version"           :       self.version,
             "block_sizes"       :       self.block_size,
             "subtitle_list"     :       []
@@ -126,7 +127,8 @@ class VCCD:
 
             entry_template = {
                 "hash"              :       i.hash,
-                "subtitle_string"   :       "".join(i.data)
+                "subtitle_string"   :       "".join(i.data),
+                "print_debug"       :       False
                 }
 
             subtitles["subtitle_list"].append(entry_template)
@@ -159,7 +161,7 @@ class VCCD_JSON_ENTRY():
 def json_to_vccd(in_file):
 
     #calculate header
-    with open(in_file, 'r') as f:
+    with open(in_file, 'r', encoding="utf-8") as f:
         subtitles_json = json.load(f)
     
     entry_count = 0
@@ -193,10 +195,26 @@ def json_to_vccd(in_file):
 
         temp_stored_pointer = f.tell()
 
+
+
         f.seek(data_offset + current_offset)
+        
+
+        if v["print_debug"]:
+            print(
+                "\n=-----------------------------------------=\n"
+                f"block {current_block}\n"
+                f"offset in file {f.tell()}\n"
+                f"length {sub_len}\n"
+                f"{subtitle_string}"
+                "\n=-----------------------------------------=\n"
+            )
         write_subtitle_string(f, subtitle_string)
+        
         f.seek(temp_stored_pointer)
-            
+
+
+
         write_uInt32(f, v["hash"])
         write_Int32(f, current_block)
         write_uInt16(f, current_offset)
@@ -211,13 +229,15 @@ def json_to_vccd(in_file):
 
     f.close()
 
-    print("\n\n=-----------------------------------------=\n")
-    print("WROTE VCCD FILE\n")
-    print("block count        ----  ", current_block)
-    print("block size         ----  ", block_size)
-    print("entries            ----  ", entry_count)
-    print("filesize in bytes  ----  ", os.path.getsize(in_file))
-    print("\n=-----------------------------------------=\n")
+    print(
+        "\n\n=-----------------------------------------=\n"
+        "WROTE VCCD FILE\n"
+        "block count        ----  ", current_block,
+        "\nblock size         ----  ", block_size,
+        "\nentries            ----  ", entry_count,
+        "\nfilesize in bytes  ----  ", os.path.getsize(in_file),
+        "\n=-----------------------------------------=\n"
+    )
 
     return
         
@@ -232,7 +252,7 @@ if __name__ == "__main__":
 
         print("\n\n=-----------------------------------------=\n")
         print("Reading VCCD file: %s\n" % in_file)
-        vccd = VCCD(open(in_file, "rb"), user_specified_encoding)
+        vccd = VCCD(open(in_file, "rb"))
         print("magic              ----  ", vccd.magic)
         if vccd.magic != "VCCD":
             print("\nFAILED MAGIC CHECK, ABORTING")
@@ -245,7 +265,7 @@ if __name__ == "__main__":
             print("entries            ----  ", vccd.directory_size)
             print("data start offset  ----  ", vccd.data_offset)
             temp_dict = vccd.subtitles_to_json()
-            f = codecs.open(f"{in_file}_out.json", "w", user_specified_encoding)
+            f = open(f"{in_file}_out.json", "w", encoding="utf-8")
             json.dump(sanitize(temp_dict[0]), f, indent=4)
             f.close()
             print(f"\nExtracted {temp_dict[1]} lines")
